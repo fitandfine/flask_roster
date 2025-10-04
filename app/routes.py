@@ -115,29 +115,55 @@ def change_password():
 #  DASHBOARD             #
 # ---------------------- #
 
+from flask import render_template, session, redirect, url_for
+from datetime import date
+from .database import get_db
+
 @bp.route("/")
 def dashboard():
-    """Display overall summary: employees, rosters, etc."""
+    """
+    Display the manager dashboard with live summary information.
+    --------------------------------------------------------------
+    Shows:
+        • Total number of registered employees
+        • The most recent roster created (start and end date)
+        • List of employees on duty today
+    """
+
+    # Redirect to login if manager not authenticated
     if "manager_id" not in session:
         return redirect(url_for("main.login"))
 
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM staff")
-    staff_count = cur.fetchone()[0]
+    cursor = conn.cursor()
 
-    cur.execute("SELECT COUNT(*) FROM roster")
-    roster_count = cur.fetchone()[0]
+    # --- 1. Employee Count ---
+    cursor.execute("SELECT COUNT(*) FROM staff")
+    employee_count = cursor.fetchone()[0]
 
-    cur.execute("SELECT start_date, end_date FROM roster ORDER BY created_at DESC LIMIT 3")
-    recent_rosters = cur.fetchall()
+    # --- 2. Most Recent Roster ---
+    cursor.execute("SELECT * FROM roster ORDER BY created_at DESC LIMIT 1")
+    latest_roster = cursor.fetchone()
 
+    # --- 3. Today's Duties ---
+    today = date.today().strftime("%Y-%m-%d")
+    cursor.execute("SELECT * FROM roster_duties WHERE duty_date=?", (today,))
+    today_duties = cursor.fetchall()
+
+    # --- 4. Optional: If no recent roster exists, handle gracefully ---
+    if latest_roster is None:
+        latest_roster = {
+            "start_date": "N/A",
+            "end_date": "N/A"
+        }
+
+    # --- 5. Pass all data to template ---
     return render_template(
         "dashboard.html",
         username=session.get("username"),
-        staff_count=staff_count,
-        roster_count=roster_count,
-        recent_rosters=recent_rosters
+        employee_count=employee_count,
+        latest_roster=latest_roster,
+        today_duties=today_duties
     )
 
 
@@ -153,78 +179,80 @@ def employees():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM staff ORDER BY name ASC")
-    staff = cur.fetchall()
-    return render_template("employees.html", staff=staff)
+    employees = cur.fetchall()
+    return render_template("employees.html", employees=employees)
 
 
 @bp.route("/employees/add", methods=["GET", "POST"])
 def add_employee():
-    """Add a new employee."""
     if "manager_id" not in session:
         return redirect(url_for("main.login"))
-
+    """Add a new employee with unavailable days."""
     if request.method == "POST":
         name = request.form["name"]
         email = request.form["email"]
-        phone = request.form.get("phone", "")
-        max_hours = request.form.get("max_hours", "")
-        days_unavailable = request.form.get("days_unavailable", "")
+        phone = request.form["phone"]
+        max_hours = request.form["max_hours"]
+
+        # Unavailable days as list of checkbox inputs
+        days = request.form.getlist("days_unavailable")
+        days_unavailable = ",".join(days)
 
         conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO staff (name, email, phone_number, max_hours, days_unavailable) VALUES (?, ?, ?, ?, ?)",
-            (name, email, phone, max_hours, days_unavailable)
+            (name, email, phone, max_hours, days_unavailable),
         )
         conn.commit()
-        flash("Employee added successfully!", "success")
+        flash("Employee added successfully", "success")
         return redirect(url_for("main.employees"))
 
-    return render_template("add_employee.html")
+    return render_template("employee_form.html", action="Add")
+
 
 
 @bp.route("/employees/edit/<int:staff_id>", methods=["GET", "POST"])
 def edit_employee(staff_id):
-    """Edit existing employee."""
     if "manager_id" not in session:
         return redirect(url_for("main.login"))
-
+    """Edit an existing employee."""
     conn = get_db()
-    cur = conn.cursor()
+    cursor = conn.cursor()
 
     if request.method == "POST":
         name = request.form["name"]
         email = request.form["email"]
         phone = request.form["phone"]
         max_hours = request.form["max_hours"]
-        days_unavailable = request.form["days_unavailable"]
+        days = request.form.getlist("days_unavailable")
+        days_unavailable = ",".join(days)
 
-        cur.execute("""
-            UPDATE staff
-            SET name=?, email=?, phone_number=?, max_hours=?, days_unavailable=?
-            WHERE staff_id=?
+        cursor.execute("""
+            UPDATE staff SET name=?, email=?, phone_number=?, max_hours=?, days_unavailable=? WHERE staff_id=?
         """, (name, email, phone, max_hours, days_unavailable, staff_id))
         conn.commit()
-        flash("Employee updated successfully!", "success")
+        flash("Employee updated successfully", "info")
         return redirect(url_for("main.employees"))
 
-    cur.execute("SELECT * FROM staff WHERE staff_id=?", (staff_id,))
-    employee = cur.fetchone()
-    return render_template("edit_employee.html", employee=employee)
+    cursor.execute("SELECT * FROM staff WHERE staff_id=?", (staff_id,))
+    employee = cursor.fetchone()
+    return render_template("employee_form.html", employee=employee, action="Edit")
 
 
-@bp.route("/employees/delete/<int:staff_id>")
+
+@bp.route("/employees/delete/<int:staff_id>", methods=["GET","POST"])
 def delete_employee(staff_id):
-    """Delete employee record."""
     if "manager_id" not in session:
         return redirect(url_for("main.login"))
-
+    """Delete an employee by ID."""
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM staff WHERE staff_id=?", (staff_id,))
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM staff WHERE staff_id=?", (staff_id,))
     conn.commit()
-    flash("Employee deleted successfully!", "info")
+    flash("Employee deleted successfully", "danger")
     return redirect(url_for("main.employees"))
+
 
 
 # ---------------------- #

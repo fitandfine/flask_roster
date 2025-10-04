@@ -1,10 +1,67 @@
+
+    
 {% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
 {% block content %}
-<h2>Dashboard</h2>
-<p>Welcome to your roster management dashboard.</p>
-<ul>
-    <li><a href="{{ url_for('main.employees') }}">Manage Employees</a></li>
-    <li><a href="{{ url_for('main.rosters') }}">Create Roster</a></li>
-    <li><a href="{{ url_for('main.change_password') }}">Change Password</a></li>
-</ul>
+<div class="container mt-4">
+  
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2><i class="fa-solid fa-gauge"></i> Manager Dashboard</h2>
+           <a href="{{ url_for('main.change_password') }}"class="btn btn-outline-danger">
+            <i class="fa-solid fa-right-from-bracket"></i> Change Password
+        </a>
+       
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        
+        <div class="col-md-4">
+            <div class="card text-center shadow-sm border-primary">
+                <div class="card-body">
+                    <h5 class="card-title text-primary"><i class="fa-solid fa-users"></i> Employees</h5>
+                    <p class="display-6 fw-bold">{{ employee_count }}</p>
+                    <a href="{{ url_for('main.employees') }}" class="btn btn-sm btn-primary">Manage</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card text-center shadow-sm border-success">
+                <div class="card-body">
+                    <h5 class="card-title text-success"><i class="fa-solid fa-calendar-days"></i> Active Roster</h5>
+                    {% if latest_roster %}
+                    <p class="fw-bold">{{ latest_roster['start_date'] }} → {{ latest_roster['end_date'] }}</p>
+                    {% else %}
+                    <p>No roster created yet.</p>
+                    {% endif %}
+                    <a href="{{ url_for('main.rosters') }}" class="btn btn-sm btn-success">Create New</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card text-center shadow-sm border-warning">
+                <div class="card-body">
+                    <h5 class="card-title text-warning"><i class="fa-solid fa-user-clock"></i> Today's Duties</h5>
+                    {% if today_duties %}
+                    <ul class="list-group list-group-flush">
+                        {% for duty in today_duties %}
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>{{ duty['employee'] }}</span>
+                            <small>{{ duty['start_time'] }}–{{ duty['end_time'] }}</small>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p>No duties scheduled today.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
+

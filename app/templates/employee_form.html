@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-5">
+  <h2>{{ action }} Employee</h2>
+  <form method="post">
+    <div class="mb-3">
+      <label>Name</label>
+      <input type="text" name="name" class="form-control" value="{{ employee.name if employee else '' }}" required>
+    </div>
+    <div class="mb-3">
+      <label>Email</label>
+      <input type="email" name="email" class="form-control" value="{{ employee.email if employee else '' }}" required>
+    </div>
+    <div class="mb-3">
+      <label>Phone</label>
+      <input type="text" name="phone" class="form-control" value="{{ employee.phone_number if employee else '' }}">
+    </div>
+    <div class="mb-3">
+      <label>Max Weekly Hours</label>
+      <input type="text" name="max_hours" class="form-control" value="{{ employee.max_hours if employee else '' }}">
+    </div>
+
+    <div class="mb-3">
+      <label>Days Unavailable</label><br>
+      {% set days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] %}
+      {% set unavailable = employee.days_unavailable.split(',') if employee and employee.days_unavailable else [] %}
+      {% for day in days %}
+        <label class="me-2">
+          <input type="checkbox" name="days_unavailable" value="{{ day }}" {% if day in unavailable %}checked{% endif %}> {{ day }}
+        </label>
+      {% endfor %}
+    </div>
+
+    <button type="submit" class="btn btn-success">Save</button>
+    <a href="{{ url_for('main.employees') }}" class="btn btn-secondary">Cancel</a>
+  </form>
+</div>
+{% endblock %}

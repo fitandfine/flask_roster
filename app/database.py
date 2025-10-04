@@ -19,7 +19,9 @@ def get_db():
     """Return a SQLite3 connection for current Flask app context."""
     if 'db' not in g:
         db_path = current_app.config.get('DATABASE', 'roster.db')
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        db_dir = os.path.dirname(db_path)
+        if db_dir:  # <-- skip if empty (like :memory:)
+            os.makedirs(db_dir, exist_ok=True)
         g.db = sqlite3.connect(db_path)
         g.db.row_factory = sqlite3.Row
     return g.db
@@ -36,16 +38,12 @@ DB_FILE = "roster.db"
 ROSTERS_DIR = "Rosters"
 
 
-def create_connection(db_file=DB_FILE):
-    """
-    Create and return a SQLite connection.
-
-    Args:
-        db_file (str): Path to the database file.
-    Returns:
-        sqlite3.Connection: A SQLite connection object.
-    """
+def create_connection(db_file=None):
+    """Create and return SQLite connection."""
+    if db_file is None:
+        db_file = current_app.config["DATABASE"]
     return sqlite3.connect(db_file)
+
 
 
 def create_tables(conn):
