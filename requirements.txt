@@ -1,0 +1,8 @@
+Flask>=2.2
+pytest>=7.0
+click>=8.0
+itsdangerous>=2.1
+Jinja2>=3.0
+Werkzeug>=2.2
+reportlab>=3.6  
+pdfkit
