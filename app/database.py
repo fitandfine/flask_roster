@@ -13,6 +13,7 @@ This module:
 import sqlite3
 import os
 from flask import current_app, g
+from werkzeug.security import generate_password_hash
 
 def get_db():
     """Return a SQLite3 connection for current Flask app context."""
@@ -112,16 +113,14 @@ def create_tables(conn):
 
 
 def seed_default_manager(conn):
-    """
-    Insert a default admin manager if none exist.
-    """
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM managers")
     count = cursor.fetchone()[0]
     if count == 0:
+        hashed_password = generate_password_hash("admin")  # <-- hash it
         cursor.execute(
             "INSERT INTO managers (username, password) VALUES (?, ?)",
-            ("admin", "admin")
+            ("admin", hashed_password)
         )
         print("[✔] Default manager created — username='admin', password='admin'")
         conn.commit()

@@ -30,6 +30,13 @@ DB_FILE = os.path.join(BASE_DIR, "..", "roster.db")
 ROSTERS_DIR = "Rosters"
 
 
+@bp.before_request
+def require_login():
+    # Allow login page and static files without session
+    if "manager_id" not in session and request.endpoint not in ("main.login", "main.static"):
+        flash("Please log in to access this page.", "warning")
+        return redirect(url_for("main.login"))
+
 # ---------------------- #
 #  DATABASE UTILITIES    #
 # ---------------------- #
@@ -137,7 +144,7 @@ def dashboard():
 # ---------------------- #
 #  EMPLOYEE MANAGEMENT   #
 # ---------------------- #
-@bp.route("/employees")
+@bp.route("/employees", strict_slashes=False)
 def employees():
     """List all employees."""
     if "manager_id" not in session:
