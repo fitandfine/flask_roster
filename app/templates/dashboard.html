@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Dashboard</h2>
+<p>Welcome to your roster management dashboard.</p>
+<ul>
+    <li><a href="{{ url_for('main.employee_management') }}">Manage Employees</a></li>
+    <li><a href="{{ url_for('main.create_roster') }}">Create Roster</a></li>
+    <li><a href="{{ url_for('main.change_password') }}">Change Password</a></li>
+</ul>
+{% endblock %}

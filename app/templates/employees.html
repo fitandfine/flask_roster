@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Employees</h2>
+<form method="POST" action="{{ url_for('main.add_employee') }}">
+    <input name="name" placeholder="Name" class="form-control mb-2" required>
+    <input name="email" placeholder="Email" class="form-control mb-2" required>
+    <button type="submit" class="btn btn-success">Add Employee</button>
+</form>
+<hr>
+<ul>
+    {% for emp in employees %}
+        <li>{{ emp[1] }} ({{ emp[2] }})</li>
+    {% endfor %}
+</ul>
+{% endblock %}

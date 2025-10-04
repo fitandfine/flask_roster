@@ -25,7 +25,8 @@ from reportlab.pdfgen import canvas
 
 # --- CONFIGURATION ---
 bp = Blueprint("main", __name__)
-DB_FILE = os.path.join("instance", "roster.db")
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+DB_FILE = os.path.join(BASE_DIR, "..", "roster.db")
 ROSTERS_DIR = "Rosters"
 
 
@@ -106,6 +107,7 @@ def change_password():
 # ---------------------- #
 #  DASHBOARD             #
 # ---------------------- #
+
 @bp.route("/")
 def dashboard():
     """Display overall summary: employees, rosters, etc."""
