@@ -15,12 +15,15 @@ import os
 from flask import current_app, g
 from werkzeug.security import generate_password_hash
 
+# -------------------------
+# Database Connection
+# -------------------------
 def get_db():
     """Return a SQLite3 connection for current Flask app context."""
     if 'db' not in g:
         db_path = current_app.config.get('DATABASE', 'roster.db')
         db_dir = os.path.dirname(db_path)
-        if db_dir:  # <-- skip if empty (like :memory:)
+        if db_dir:
             os.makedirs(db_dir, exist_ok=True)
         g.db = sqlite3.connect(db_path)
         g.db.row_factory = sqlite3.Row
@@ -33,7 +36,10 @@ def close_db(e=None):
     if db is not None:
         db.close()
 
+
+# -------------------------
 # Constants
+# -------------------------
 DB_FILE = "roster.db"
 ROSTERS_DIR = "Rosters"
 
@@ -41,19 +47,20 @@ ROSTERS_DIR = "Rosters"
 def create_connection(db_file=None):
     """Create and return SQLite connection."""
     if db_file is None:
-        db_file = current_app.config["DATABASE"]
-    return sqlite3.connect(db_file)
+        db_file = current_app.config.get("DATABASE", DB_FILE)
+    conn = sqlite3.connect(db_file)
+    conn.execute("PRAGMA foreign_keys = ON")  # Ensure FK constraints
+    return conn
 
 
-
+# -------------------------
+# Table Creation
+# -------------------------
 def create_tables(conn):
-    """
-    Create all necessary tables if they don't already exist.
-    """
-
+    """Create all necessary tables if they don't already exist."""
     cursor = conn.cursor()
 
-    # Table for manager credentials
+    # Managers
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS managers (
             manager_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,16 +69,16 @@ def create_tables(conn):
         )
     """)
 
-    # Table for company information
+    # Company info
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS company_info (
-            company_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            company_name TEXT NOT NULL,
+            company_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_name    TEXT NOT NULL,
             department_name TEXT
         )
     """)
 
-    # Table for employee/staff details
+    # Employees / Staff
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS staff (
             staff_id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,39 +90,48 @@ def create_tables(conn):
         )
     """)
 
-    # Table for roster summary
+    # Roster summary
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS roster (
             roster_id  INTEGER PRIMARY KEY AUTOINCREMENT,
             start_date TEXT,
             end_date   TEXT,
-            pdf_file   TEXT,  -- Path to the generated PDF file
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            pdf_file   TEXT,  -- Path to the generated PDF
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            edited_on  TEXT
         )
     """)
 
-    # Table for duty details (with optional notes)
+    # Roster assignments (dynamic multiple employees per day/shift)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS roster_duties (
-            roster_id  INTEGER,
-            duty_date  TEXT,
-            employee   TEXT,
-            start_time TEXT,
-            end_time   TEXT,
-            note       TEXT,
-            FOREIGN KEY(roster_id) REFERENCES roster(roster_id) ON DELETE CASCADE
+        CREATE TABLE IF NOT EXISTS roster_assignments (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            roster_id   INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            duty_date   TEXT NOT NULL,
+            shift       TEXT,
+            hours       TEXT,
+            note        TEXT,
+            start_time   TEXT,
+            end_time     TEXT,       
+            FOREIGN KEY(roster_id) REFERENCES roster(roster_id) ON DELETE CASCADE,
+            FOREIGN KEY(employee_id) REFERENCES staff(staff_id) ON DELETE CASCADE
         )
     """)
 
     conn.commit()
 
 
+# -------------------------
+# Seed Defaults
+# -------------------------
 def seed_default_manager(conn):
+    """Insert default admin if no managers exist."""
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM managers")
     count = cursor.fetchone()[0]
     if count == 0:
-        hashed_password = generate_password_hash("admin")  # <-- hash it
+        hashed_password = generate_password_hash("admin")
         cursor.execute(
             "INSERT INTO managers (username, password) VALUES (?, ?)",
             ("admin", hashed_password)
@@ -125,9 +141,7 @@ def seed_default_manager(conn):
 
 
 def seed_company_info(conn):
-    """
-    Insert a placeholder company info row if not present.
-    """
+    """Insert placeholder company info if not present."""
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM company_info")
     count = cursor.fetchone()[0]
@@ -140,17 +154,19 @@ def seed_company_info(conn):
         conn.commit()
 
 
+# -------------------------
+# PDF Folder
+# -------------------------
 def ensure_rosters_folder():
-    """
-    Ensure that the directory for storing generated roster PDFs exists.
-    """
+    """Ensure that the directory for storing generated roster PDFs exists."""
     os.makedirs(ROSTERS_DIR, exist_ok=True)
 
 
+# -------------------------
+# Full Initialization
+# -------------------------
 def initialize_database():
-    """
-    Run full initialization: tables, default admin, company info, PDF folder.
-    """
+    """Run full initialization: tables, default admin, company info, PDF folder."""
     conn = create_connection()
     create_tables(conn)
     seed_default_manager(conn)
@@ -159,6 +175,10 @@ def initialize_database():
     ensure_rosters_folder()
 
 
+# -------------------------
+# Run standalone
+# -------------------------
 if __name__ == "__main__":
     initialize_database()
     print("[✔] Database initialized and ready.")
+    print(f"[✔] PDF storage folder ensured at '{ROSTERS_DIR}/'")

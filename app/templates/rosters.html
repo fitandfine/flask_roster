@@ -1,5 +1,301 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Create Roster</h2>
-<p>Feature coming soon...</p>
+<div class="container mt-3">
+  <h2 class="text-center mb-4">🗓 Weekly Roster Management</h2>
+
+  <!-- Roster Form -->
+  <form id="rosterForm" method="POST">
+    <div class="row g-3">
+      <div class="col-md-4 col-12">
+        <label><strong>Start Date</strong></label>
+        <input type="date" id="start_date" name="start_date" class="form-control" required value="{{ request.form.get('start_date','') }}">
+      </div>
+      <div class="col-md-4 col-12">
+        <label><strong>End Date (auto)</strong></label>
+        <input type="text" id="end_date" class="form-control" readonly value="{{ request.form.get('end_date','') }}">
+      </div>
+    </div>
+
+    <div id="weekView" class="mt-3" style="display:none;">
+      <h5>Week Overview</h5>
+      <div id="weekContainer" class="accordion"></div>
+    </div>
+
+    <button type="submit" class="btn btn-success mt-3">💾 Save & Generate PDF</button>
+  </form>
+
+  <!-- Cumulative hours panel -->
+  <div class="position-fixed top-50 end-0 p-2 bg-light border rounded shadow-sm" style="width:220px; max-height:80vh; overflow-y:auto;">
+    <h6>Cumulative Hours</h6>
+    <ul id="weeklyHours" class="list-unstyled"></ul>
+  </div>
+
+  <!-- Past Rosters -->
+  <h4 class="mt-5">📚 Previous Rosters</h4>
+  <ul class="list-group mb-5">
+    {% for roster in rosters %}
+    <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap">
+      <span>{{ roster.start_date }} → {{ roster.end_date }}</span>
+      <div class="mt-2 mt-md-0">
+        <a href="{{ url_for('main.download_roster', filename=roster.pdf_file) }}" class="btn btn-sm btn-primary">⬇ Download</a>
+        <button class="btn btn-sm btn-secondary" onclick="previewPDF('{{ url_for('main.download_roster', filename=roster.pdf_file) }}')">👁 Preview</button>
+        <button class="btn btn-sm btn-info" onclick="loadPreviousRoster({{ roster.roster_id }})">🔄 Use for New Roster</button>
+      </div>
+    </li>
+    {% else %}
+    <li class="list-group-item text-muted">No previous rosters found</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<!-- Company/Department modal -->
+<div class="modal" id="companyModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content p-3">
+      <h5>Confirm Company & Department</h5>
+      <div class="mb-2">
+        <label>Company Name:</label>
+        <input type="text" id="company_name" class="form-control" value="My Company">
+      </div>
+      <div class="mb-2">
+        <label>Department:</label>
+        <input type="text" id="department_name" class="form-control" value="General Department">
+      </div>
+      <button class="btn btn-success" onclick="submitRoster()">Save Roster</button>
+      <button class="btn btn-secondary" onclick="closeCompanyModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- PDF Preview Modal -->
+<div id="pdfModal" class="modal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Roster PDF Preview</h5>
+        <button type="button" class="btn-close" onclick="closePDF()"></button>
+      </div>
+      <div class="modal-body">
+        <iframe id="pdfFrame" width="100%" height="600px"></iframe>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="printPDF()">🖨 Print</button>
+        <button class="btn btn-secondary" onclick="emailPDF()">✉ Email</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const employees = {{ employees|tojson }};
+const weekdays = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+let employeeHours = {};
+
+// Initialize cumulative hours
+function resetEmployeeHours() {
+    employeeHours = {};
+    employees.forEach(emp => employeeHours[emp.staff_id] = 0);
+}
+
+// Generate week view when start date changes
+document.getElementById("start_date").addEventListener("change", function() {
+    const start = new Date(this.value);
+    if (!start) return;
+
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    document.getElementById("end_date").value = end.toISOString().split("T")[0];
+
+    const container = document.getElementById("weekContainer");
+    container.innerHTML = "";
+    document.getElementById("weekView").style.display = "block";
+
+    resetEmployeeHours();
+
+    for(let i = 0; i < 7; i++) {
+        const day = new Date(start);
+        day.setDate(start.getDate() + i);
+        const dateStr = day.toISOString().split("T")[0];
+        const dayName = weekdays[day.getDay()];
+
+        const card = document.createElement("div");
+        card.className = "card mb-2";
+        card.innerHTML = `
+            <div class="card-body p-2">
+                <h6>${dayName}, ${dateStr}</h6>
+                <table class="table table-sm mb-2" id="table_${dateStr}">
+                    <thead>
+                        <tr><th>Employee</th><th>Start</th><th>End</th><th>Note</th><th>Total Hours</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <button type="button" class="btn btn-sm btn-primary" onclick="addDuty('${dateStr}')">➕ Add Duty</button>
+            </div>
+        `;
+        container.appendChild(card);
+    }
+    updateCumulativeHours();
+});
+
+// Add a duty row
+function addDuty(dateStr) {
+    const available = employees.filter(emp => {
+        const dayName = weekdays[new Date(dateStr).getDay()];
+        const unavail = emp.days_unavailable ? emp.days_unavailable.split(",") : [];
+        return !unavail.includes(dayName);
+    });
+    if(!available.length){ alert("No staff available"); return; }
+
+    const tbody = document.querySelector(`#table_${dateStr} tbody`);
+    const row = document.createElement("tr");
+    row.innerHTML = `
+        <td>
+            <select class="form-select form-select-sm employee_select" onchange="updateCumulativeHours()">
+                ${available.map(emp => `<option value="${emp.staff_id}" data-max="${emp.max_hours}">${emp.name}</option>`).join('')}
+            </select>
+        </td>
+        <td><input type="time" class="form-control form-control-sm start_time" onchange="updateCumulativeHours()"></td>
+        <td><input type="time" class="form-control form-control-sm end_time" onchange="updateCumulativeHours()"></td>
+        <td><input type="text" class="form-control form-control-sm note_text" placeholder="Note"></td>
+        <td class="employee_total_hours text-center">0h</td>
+        <td><button type="button" class="btn btn-sm btn-danger" onclick="removeDuty(this)">❌</button></td>
+    `;
+    tbody.appendChild(row);
+}
+
+// Remove a duty row
+function removeDuty(btn) {
+    btn.closest("tr").remove();
+    updateCumulativeHours();
+}
+
+// Update cumulative hours for all employees
+function updateCumulativeHours() {
+    resetEmployeeHours();
+
+    document.querySelectorAll("table tbody tr").forEach(row => {
+        const empSelect = row.querySelector(".employee_select");
+        const start = row.querySelector(".start_time").value;
+        const end = row.querySelector(".end_time").value;
+        const totalCell = row.querySelector(".employee_total_hours");
+        let hours = 0;
+
+        if(start && end){
+            const startDate = new Date(`1970-01-01T${start}`);
+            const endDate = new Date(`1970-01-01T${end}`);
+            hours = (endDate - startDate) / 3600000;
+            if(hours < 0) hours += 24; // overnight shift
+        }
+
+        employeeHours[empSelect.value] += hours;
+        totalCell.textContent = `${hours.toFixed(2)}h`;
+
+        const max = parseFloat(empSelect.selectedOptions[0].dataset.max);
+        if(employeeHours[empSelect.value] > max) totalCell.classList.add("text-danger");
+        else totalCell.classList.remove("text-danger");
+    });
+
+    // Update side panel
+    const ul = document.getElementById("weeklyHours");
+    ul.innerHTML = "";
+    employees.forEach(emp => {
+        const li = document.createElement("li");
+        li.textContent = `${emp.name}: ${employeeHours[emp.staff_id].toFixed(1)}h / ${emp.max_hours}h`;
+        if(employeeHours[emp.staff_id] > emp.max_hours) li.classList.add("text-danger");
+        ul.appendChild(li);
+    });
+}
+
+// Form submit with hidden assignments JSON
+document.getElementById("rosterForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    if(!document.getElementById("start_date").value){ alert("Start date required"); return; }
+    openCompanyModal();
+});
+
+function openCompanyModal(){ document.getElementById("companyModal").style.display = "block"; }
+function closeCompanyModal(){ document.getElementById("companyModal").style.display = "none"; }
+
+function submitRoster(){
+    const form = document.getElementById("rosterForm");
+    const assignments = [];
+
+    document.querySelectorAll("table tbody tr").forEach(row => {
+        const empSelect = row.querySelector(".employee_select");
+        assignments.push({
+            employee_id: empSelect.value,
+            duty_date: row.closest("table").id.replace("table_",""),
+            start: row.querySelector(".start_time").value,
+            end: row.querySelector(".end_time").value,
+            note: row.querySelector(".note_text").value
+        });
+    });
+
+    // hidden inputs
+    const assignmentsInput = document.createElement("input");
+    assignmentsInput.type = "hidden"; assignmentsInput.name = "assignments";
+    assignmentsInput.value = JSON.stringify(assignments);
+    form.appendChild(assignmentsInput);
+
+    const endInput = document.createElement("input");
+    endInput.type = "hidden"; endInput.name = "end_date";
+    endInput.value = document.getElementById("end_date").value;
+    form.appendChild(endInput);
+
+    const compInput = document.createElement("input");
+    compInput.type = "hidden"; compInput.name = "company_name";
+    compInput.value = document.getElementById("company_name").value;
+    form.appendChild(compInput);
+
+    const deptInput = document.createElement("input");
+    deptInput.type = "hidden"; deptInput.name = "department_name";
+    deptInput.value = document.getElementById("department_name").value;
+    form.appendChild(deptInput);
+
+    form.submit();
+    closeCompanyModal();
+}
+
+// PDF preview modal
+function previewPDF(url){
+    document.getElementById("pdfFrame").src = url;
+    document.getElementById("pdfModal").style.display = "block";
+}
+function closePDF(){ document.getElementById("pdfModal").style.display = "none"; }
+function printPDF(){ document.getElementById("pdfFrame").contentWindow.print(); }
+
+// Load previous roster into week view
+function loadPreviousRoster(roster_id){
+    fetch(`/rosters/load/${roster_id}`)
+        .then(res => res.json())
+        .then(data => {
+            // clear all tables
+            document.querySelectorAll("table tbody").forEach(t => t.innerHTML = "");
+
+            data.forEach(duty => {
+                const table = document.getElementById(`table_${duty.duty_date}`);
+                if(!table) return;
+
+                const emp = employees.find(e => e.staff_id == duty.employee_id);
+                if(!emp) return;
+
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td><select class="form-select form-select-sm employee_select" onchange="updateCumulativeHours()">
+                        <option value="${emp.staff_id}" data-max="${emp.max_hours}" selected>${emp.name}</option>
+                    </select></td>
+                    <td><input type="time" class="form-control form-control-sm start_time" value="${duty.start||''}" onchange="updateCumulativeHours()"></td>
+                    <td><input type="time" class="form-control form-control-sm end_time" value="${duty.end||''}" onchange="updateCumulativeHours()"></td>
+                    <td><input type="text" class="form-control form-control-sm note_text" value="${duty.note||''}"></td>
+                    <td class="employee_total_hours text-center">0h</td>
+                    <td><button type="button" class="btn btn-sm btn-danger" onclick="removeDuty(this)">❌</button></td>
+                `;
+                table.querySelector("tbody").appendChild(row);
+            });
+            updateCumulativeHours();
+        })
+        .catch(err => alert("Failed to load roster: " + err));
+}
+</script>
+
 {% endblock %}
